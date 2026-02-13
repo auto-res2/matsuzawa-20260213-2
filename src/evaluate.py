@@ -173,12 +173,47 @@ def fetch_wandb_run(entity: str, project: str, run_id: str) -> Dict[str, Any]:
     config = _convert_to_json_serializable(config)
     summary = _convert_to_json_serializable(summary)
     
+    # [VALIDATOR FIX - Attempt 5]
+    # [PROBLEM]: History rows are converted to strings instead of dicts
+    # [CAUSE]: _convert_to_json_serializable fails on WandB history row objects and falls back to str()
+    # [FIX]: Manually iterate over row keys and extract values to build dict, similar to config/summary
+    #
+    # [OLD CODE]:
+    # history = []
+    # try:
+    #     for row in run.history():
+    #         history.append(_convert_to_json_serializable(row))
+    # except Exception as e:
+    #     print(f"Warning: Could not fetch history for {run_id}: {e}")
+    #
+    # [NEW CODE]:
     # Get history (may be empty for single-step runs)
     history = []
     try:
         for row in run.history():
-            # Pass WandB row object directly without calling dict() first
-            history.append(_convert_to_json_serializable(row))
+            # Manually extract row data to avoid conversion issues
+            row_dict = {}
+            try:
+                # Try to get keys from the row object
+                if hasattr(row, 'keys') and callable(row.keys):
+                    for key in row.keys():
+                        try:
+                            row_dict[key] = row[key]
+                        except Exception:
+                            row_dict[key] = None
+                else:
+                    # Fallback: try to iterate as dict
+                    for key in row:
+                        try:
+                            row_dict[key] = row[key]
+                        except Exception:
+                            row_dict[key] = None
+            except Exception as e:
+                print(f"Warning: Could not extract row data: {e}")
+                continue
+            
+            # Convert to JSON-serializable
+            history.append(_convert_to_json_serializable(row_dict))
     except Exception as e:
         print(f"Warning: Could not fetch history for {run_id}: {e}")
     
