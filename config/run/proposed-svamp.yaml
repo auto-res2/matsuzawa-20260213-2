@@ -1,0 +1,44 @@
+run_id: proposed-svamp
+
+method:
+  type: proposed
+  name: cal-msc
+  description: "Calibrated Metacognitive Self-Consistency"
+  k_samples: 10
+  temperature: 0.8
+  calibration_method: binning  # binning or isotonic
+  n_bins: 10
+  laplace_smoothing: 1.0
+
+model:
+  name: gpt-3.5-turbo
+  provider: openai
+  max_tokens: 512
+
+dataset:
+  name: svamp
+  split: test
+  n_total: 300
+  n_calibration: 60
+  n_evaluation: 240
+
+inference:
+  batch_size: 1
+  num_workers: 1
+  use_cache: true
+  cache_dir: .cache
+
+prompt:
+  system_message: "You are a helpful assistant that solves math word problems step by step."
+  cot_instruction: |
+    Solve this math problem step by step. Show your reasoning clearly.
+    
+    After solving, provide:
+    1. Final answer: [your numeric answer]
+    2. Self-check: [briefly verify your key arithmetic and reasoning]
+    3. Updated confidence: [a number between 0.0 and 1.0 indicating how confident you are]
+    
+    Format your response as:
+    Final answer: <number>
+    Self-check: <brief verification>
+    Updated confidence: <0.0 to 1.0>
