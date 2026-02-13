@@ -51,6 +51,33 @@ def _convert_to_json_serializable(obj):
     #     return str(obj)
     #
     # [NEW CODE]:
+    # [VALIDATOR FIX - Attempt 4]
+    # [PROBLEM]: WandB objects raise AttributeError when accessing to_dict, even in try-except
+    # [CAUSE]: Some WandB objects (SummarySubDict, Config) have dict-like interface but fail on to_dict access
+    # [FIX]: Check for items() method first (dict-like), then try other conversions more carefully
+    #
+    # [OLD CODE]:
+    # if isinstance(obj, dict):
+    #     return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+    # elif isinstance(obj, (list, tuple)):
+    #     return [_convert_to_json_serializable(item) for item in obj]
+    # elif isinstance(obj, (int, float, str, bool, type(None))):
+    #     return obj
+    # else:
+    #     try:
+    #         to_dict_method = obj.to_dict
+    #         if callable(to_dict_method):
+    #             return _convert_to_json_serializable(to_dict_method())
+    #     except (AttributeError, TypeError):
+    #         pass
+    #     try:
+    #         if hasattr(obj, '__dict__'):
+    #             return _convert_to_json_serializable(obj.__dict__)
+    #     except (AttributeError, TypeError):
+    #         pass
+    #     return str(obj)
+    #
+    # [NEW CODE]:
     if isinstance(obj, dict):
         # Recursively convert all dict values
         return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
@@ -61,19 +88,32 @@ def _convert_to_json_serializable(obj):
         # Already JSON-serializable
         return obj
     else:
-        # Try to_dict first (safest with try-except to avoid AttributeError on access)
+        # Try dict-like conversion first (for WandB objects with items() method)
         try:
-            to_dict_method = obj.to_dict
-            if callable(to_dict_method):
-                return _convert_to_json_serializable(to_dict_method())
-        except (AttributeError, TypeError):
+            if hasattr(obj, 'items') and callable(obj.items):
+                # Treat as dict-like object
+                return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+        except Exception:
             pass
         
-        # Try __dict__ next
+        # Try keys() method for dict-like objects without items()
+        try:
+            if hasattr(obj, 'keys') and callable(obj.keys):
+                result = {}
+                for k in obj.keys():
+                    try:
+                        result[k] = _convert_to_json_serializable(obj[k])
+                    except Exception:
+                        result[k] = str(obj[k])
+                return result
+        except Exception:
+            pass
+        
+        # Try __dict__ attribute
         try:
             if hasattr(obj, '__dict__'):
                 return _convert_to_json_serializable(obj.__dict__)
-        except (AttributeError, TypeError):
+        except Exception:
             pass
         
         # Fallback: convert to string
@@ -87,49 +127,58 @@ def fetch_wandb_run(entity: str, project: str, run_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing config, summary, and history
     """
-    # [VALIDATOR FIX - Attempt 1]
-    # [PROBLEM]: TypeError: Object of type SummarySubDict is not JSON serializable
-    # [CAUSE]: run.summary contains nested SummarySubDict objects from W&B that don't convert properly with dict()
-    # [FIX]: Recursively convert all W&B objects to JSON-serializable types using helper function
+    # [VALIDATOR FIX - Attempt 4]
+    # [PROBLEM]: Error 'to_dict' when accessing WandB run objects
+    # [CAUSE]: WandB's SummarySubDict and Config objects raise AttributeError('to_dict') 
+    #          when accessed, even through try-except blocks
+    # [FIX]: Manually extract data from WandB objects using safe key iteration with getattr
     #
     # [OLD CODE]:
     # api = wandb.Api()
     # run = api.run(f"{entity}/{project}/{run_id}")
-    # 
-    # # Get run data
-    # config = dict(run.config)
-    # summary = dict(run.summary)
-    # 
-    # # Get history (may be empty for single-step runs)
-    # history = []
-    # try:
-    #     for row in run.history():
-    #         history.append(dict(row))
-    # except Exception as e:
-    #     print(f"Warning: Could not fetch history for {run_id}: {e}")
-    # 
-    # return {
-    #     'config': config,
-    #     'summary': summary,
-    #     'history': history,
-    #     'run_id': run_id,
-    #     'name': run.name,
-    #     'url': run.url
-    # }
+    # config = _convert_to_json_serializable(run.config)
+    # summary = _convert_to_json_serializable(run.summary)
     #
     # [NEW CODE]:
     api = wandb.Api()
     run = api.run(f"{entity}/{project}/{run_id}")
     
-    # Get run data with proper conversion to JSON-serializable types
-    config = _convert_to_json_serializable(dict(run.config))
-    summary = _convert_to_json_serializable(dict(run.summary))
+    # Manually extract config data to avoid AttributeError
+    config = {}
+    try:
+        # WandB config objects support iteration but may fail on dict() conversion
+        for key in run.config.keys():
+            try:
+                config[key] = run.config[key]
+            except Exception as e:
+                print(f"Warning: Could not fetch config key {key}: {e}")
+                config[key] = None
+    except Exception as e:
+        print(f"Warning: Could not iterate config: {e}")
+    
+    # Manually extract summary data to avoid AttributeError  
+    summary = {}
+    try:
+        # WandB summary objects support iteration but may fail on dict() conversion
+        for key in run.summary.keys():
+            try:
+                summary[key] = run.summary[key]
+            except Exception as e:
+                print(f"Warning: Could not fetch summary key {key}: {e}")
+                summary[key] = None
+    except Exception as e:
+        print(f"Warning: Could not iterate summary: {e}")
+    
+    # Convert extracted data to JSON-serializable types
+    config = _convert_to_json_serializable(config)
+    summary = _convert_to_json_serializable(summary)
     
     # Get history (may be empty for single-step runs)
     history = []
     try:
         for row in run.history():
-            history.append(_convert_to_json_serializable(dict(row)))
+            # Pass WandB row object directly without calling dict() first
+            history.append(_convert_to_json_serializable(row))
     except Exception as e:
         print(f"Warning: Could not fetch history for {run_id}: {e}")
     
