@@ -1,6 +1,7 @@
+---
 name: "Compile LaTeX"
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       branch_name:
@@ -15,7 +16,7 @@ on:
         required: true
         default: 'generated_paper'
       github_actions_agent:
-        description: 'AI agent tool to use (claude_code or open_code)'  
+        description: 'AI agent tool to use (claude_code or open_code)'
         required: true
         type: choice
         options:
@@ -100,11 +101,17 @@ jobs:
             texlive-latex-extra \
             texlive-science
 
+      - name: Save prompt to file
+        run: |
+          PROMPT_FILE=".github/workflows/latex_prompt.txt"
+          printf '%s\n' '${{ env.PROMPT }}' > "$PROMPT_FILE"
+          echo "PROMPT_FILE=$PROMPT_FILE" >> "$GITHUB_ENV"
+
       - name: Run Claude Code to fix errors
         if: github.event.inputs.github_actions_agent == 'claude_code'
         uses: ./.github/actions/run-claude-code
         with:
-          prompt: ${{ env.PROMPT }}
+          prompt_file: ${{ env.PROMPT_FILE }}
           model_name: ${{ github.event.inputs.model_name }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -113,7 +120,7 @@ jobs:
         if: github.event.inputs.github_actions_agent == 'open_code'
         uses: ./.github/actions/run-open-code
         with:
-          prompt: ${{ env.PROMPT }}
+          prompt_file: ${{ env.PROMPT_FILE }}
           model_name: ${{ github.event.inputs.model_name }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -176,7 +183,7 @@ jobs:
         run: |
           RETRY_COUNT=${{ github.event.inputs.retry_count }}
           MAX_RETRIES=5
-          
+
           if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
             echo "Max retries ($MAX_RETRIES) reached. Failing workflow."
             echo "should_retry=false" >> "$GITHUB_OUTPUT"
