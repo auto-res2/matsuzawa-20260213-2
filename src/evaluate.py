@@ -295,12 +295,39 @@ def main():
     
     args = parser.parse_args()
     
-    # Get WandB config
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: WandB entity and project not provided to evaluate.py during visualization stage
+    # [CAUSE]: The workflow file calls evaluate.py without passing wandb_entity/wandb_project arguments,
+    #          and does not set WANDB_ENTITY/WANDB_PROJECT environment variables
+    # [FIX]: Read wandb config from config/config.yaml if not provided via args or env vars
+    #
+    # [OLD CODE]:
+    # entity = args.wandb_entity or os.getenv('WANDB_ENTITY')
+    # project = args.wandb_project or os.getenv('WANDB_PROJECT')
+    # 
+    # if not entity or not project:
+    #     raise ValueError("WandB entity and project must be specified via arguments or environment variables")
+    #
+    # [NEW CODE]:
     entity = args.wandb_entity or os.getenv('WANDB_ENTITY')
     project = args.wandb_project or os.getenv('WANDB_PROJECT')
     
+    # Fallback: read from config.yaml if not provided
     if not entity or not project:
-        raise ValueError("WandB entity and project must be specified via arguments or environment variables")
+        import yaml
+        config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                if not entity and config.get('wandb', {}).get('entity'):
+                    entity = config['wandb']['entity']
+                    print(f"Using WandB entity from config.yaml: {entity}")
+                if not project and config.get('wandb', {}).get('project'):
+                    project = config['wandb']['project']
+                    print(f"Using WandB project from config.yaml: {project}")
+    
+    if not entity or not project:
+        raise ValueError("WandB entity and project must be specified via arguments, environment variables, or config.yaml")
     
     print(f"WandB: {entity}/{project}")
     
