@@ -29,11 +29,23 @@ def main(cfg: DictConfig):
     
     # Apply mode-specific overrides
     if mode == 'sanity_check':
+        # [VALIDATOR FIX - Attempt 1]
+        # [PROBLEM]: KeyError 'dataset' is not in struct - cfg.dataset doesn't exist
+        # [CAUSE]: Config structure has dataset nested under 'run', not at top level
+        # [FIX]: Changed cfg.dataset -> cfg.run.dataset and cfg.method -> cfg.run.method
+        #
+        # [OLD CODE]:
+        # cfg.dataset.n_total = 20
+        # cfg.dataset.n_calibration = 5
+        # cfg.dataset.n_evaluation = 15
+        # cfg.method.k_samples = 3
+        #
+        # [NEW CODE]:
         # For inference tasks, reduce dataset size
-        cfg.dataset.n_total = 20
-        cfg.dataset.n_calibration = 5
-        cfg.dataset.n_evaluation = 15
-        cfg.method.k_samples = 3
+        cfg.run.dataset.n_total = 20
+        cfg.run.dataset.n_calibration = 5
+        cfg.run.dataset.n_evaluation = 15
+        cfg.run.method.k_samples = 3
         cfg.wandb.mode = 'online'
         print("Sanity check mode: Using reduced dataset and samples")
     

@@ -104,10 +104,22 @@ def load_dataset(cfg: DictConfig, mode: str = 'main') -> List[Dict]:
     Returns:
         List of dataset examples
     """
-    dataset_name = cfg.dataset.name.lower()
-    split = cfg.dataset.split
-    n_total = cfg.dataset.n_total
-    cache_dir = cfg.get('inference', {}).get('cache_dir', '.cache')
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: Config paths need cfg.run.* prefix
+    # [CAUSE]: Config structure nests under 'run' key
+    # [FIX]: Changed cfg.dataset -> cfg.run.dataset, cfg.inference -> cfg.run.inference
+    #
+    # [OLD CODE]:
+    # dataset_name = cfg.dataset.name.lower()
+    # split = cfg.dataset.split
+    # n_total = cfg.dataset.n_total
+    # cache_dir = cfg.get('inference', {}).get('cache_dir', '.cache')
+    #
+    # [NEW CODE]:
+    dataset_name = cfg.run.dataset.name.lower()
+    split = cfg.run.dataset.split
+    n_total = cfg.run.dataset.n_total
+    cache_dir = cfg.run.get('inference', {}).get('cache_dir', '.cache')
     
     print(f"Loading {dataset_name} dataset (split={split}, n_total={n_total})...")
     

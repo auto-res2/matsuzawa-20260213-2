@@ -181,16 +181,35 @@ def query_llm(client: Any, question: str, cfg: DictConfig, seed: Optional[int] =
     if client is None:
         raise RuntimeError("OpenAI client not initialized")
     
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: Config paths need to reference cfg.run.* instead of cfg.* directly
+    # [CAUSE]: Hydra config structure nests run-specific config under 'run' key
+    # [FIX]: Changed cfg.prompt -> cfg.run.prompt, cfg.model -> cfg.run.model, cfg.method -> cfg.run.method
+    #
+    # [OLD CODE]:
+    # messages = [
+    #     {"role": "system", "content": cfg.prompt.system_message},
+    #     {"role": "user", "content": f"{cfg.prompt.cot_instruction}\n\nQuestion: {question}"}
+    # ]
+    # response = client.chat.completions.create(
+    #     model=cfg.model.name,
+    #     messages=messages,
+    #     temperature=cfg.method.temperature,
+    #     max_tokens=cfg.model.max_tokens,
+    #     seed=seed
+    # )
+    #
+    # [NEW CODE]:
     messages = [
-        {"role": "system", "content": cfg.prompt.system_message},
-        {"role": "user", "content": f"{cfg.prompt.cot_instruction}\n\nQuestion: {question}"}
+        {"role": "system", "content": cfg.run.prompt.system_message},
+        {"role": "user", "content": f"{cfg.run.prompt.cot_instruction}\n\nQuestion: {question}"}
     ]
     
     response = client.chat.completions.create(
-        model=cfg.model.name,
+        model=cfg.run.model.name,
         messages=messages,
-        temperature=cfg.method.temperature,
-        max_tokens=cfg.model.max_tokens,
+        temperature=cfg.run.method.temperature,
+        max_tokens=cfg.run.model.max_tokens,
         seed=seed
     )
     
@@ -219,16 +238,27 @@ def run_inference(cfg: DictConfig, dataset: List[Dict], mode: str = 'main') -> D
     
     client = OpenAI(api_key=api_key)
     
+    # [VALIDATOR FIX - Attempt 1] 
+    # [PROBLEM]: Config paths need cfg.run.* prefix
+    # [CAUSE]: Config structure nests under 'run' key
+    # [FIX]: Changed cfg.method -> cfg.run.method, cfg.dataset -> cfg.run.dataset
+    #
+    # [OLD CODE]:
+    # method_type = cfg.method.type
+    # k_samples = cfg.method.k_samples
+    # n_cal = cfg.dataset.n_calibration
+    #
+    # [NEW CODE]:
     # Get method configuration
-    method_type = cfg.method.type
-    k_samples = cfg.method.k_samples
+    method_type = cfg.run.method.type
+    k_samples = cfg.run.method.k_samples
     
     # Adjust for sanity check mode
     if mode == 'sanity_check':
         k_samples = min(k_samples, 3)  # Reduce samples for sanity check
     
     # Split dataset into calibration and evaluation sets
-    n_cal = cfg.dataset.n_calibration
+    n_cal = cfg.run.dataset.n_calibration
     if method_type == 'proposed':
         calibration_set = dataset[:n_cal]
         evaluation_set = dataset[n_cal:]
@@ -266,20 +296,32 @@ def run_inference(cfg: DictConfig, dataset: List[Dict], mode: str = 'main') -> D
         
         print(f"Collected {len(cal_confidences)} calibration samples")
         
+        # [VALIDATOR FIX - Attempt 1]
+        # [PROBLEM]: Config paths need cfg.run.* prefix  
+        # [CAUSE]: Config structure nests under 'run' key
+        # [FIX]: Changed cfg.method -> cfg.run.method
+        #
+        # [OLD CODE]:
+        # if cfg.method.calibration_method == 'isotonic':
+        #     calibration_map = calibrate_binning(..., n_bins=cfg.method.n_bins, laplace_smooth=cfg.method.laplace_smoothing)
+        # else:
+        #     calibration_map = calibrate_binning(..., n_bins=cfg.method.n_bins, laplace_smooth=cfg.method.laplace_smoothing)
+        #
+        # [NEW CODE]:
         # Learn calibration mapping
-        if cfg.method.calibration_method == 'isotonic':
+        if cfg.run.method.calibration_method == 'isotonic':
             isotonic_model = calibrate_isotonic(cal_confidences, cal_correctness)
             if isotonic_model is None:
                 calibration_map = calibrate_binning(
                     cal_confidences, cal_correctness,
-                    n_bins=cfg.method.n_bins,
-                    laplace_smooth=cfg.method.laplace_smoothing
+                    n_bins=cfg.run.method.n_bins,
+                    laplace_smooth=cfg.run.method.laplace_smoothing
                 )
         else:
             calibration_map = calibrate_binning(
                 cal_confidences, cal_correctness,
-                n_bins=cfg.method.n_bins,
-                laplace_smooth=cfg.method.laplace_smoothing
+                n_bins=cfg.run.method.n_bins,
+                laplace_smooth=cfg.run.method.laplace_smoothing
             )
     
     # Run inference on evaluation set
@@ -312,13 +354,23 @@ def run_inference(cfg: DictConfig, dataset: List[Dict], mode: str = 'main') -> D
                     'confidence': None
                 })
         
+        # [VALIDATOR FIX - Attempt 1]
+        # [PROBLEM]: Config paths need cfg.run.* prefix
+        # [CAUSE]: Config structure nests under 'run' key  
+        # [FIX]: Changed cfg.method -> cfg.run.method
+        #
+        # [OLD CODE]:
+        # if method_type == 'proposed':
+        #     predicted_answer, agg_stats = aggregate_calibrated_msc(..., n_bins=cfg.method.n_bins)
+        #
+        # [NEW CODE]:
         # Aggregate answers
         if method_type == 'proposed':
             predicted_answer, agg_stats = aggregate_calibrated_msc(
                 samples, 
                 calibration_map=calibration_map,
                 isotonic_model=isotonic_model,
-                n_bins=cfg.method.n_bins
+                n_bins=cfg.run.method.n_bins
             )
         else:
             predicted_answer, agg_stats = aggregate_majority_vote(samples)
@@ -379,9 +431,18 @@ def main(cfg: DictConfig):
         )
         print(f"WandB run: {wandb.run.url}")
     
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: Config paths need cfg.run.* prefix
+    # [CAUSE]: Config structure nests under 'run' key
+    # [FIX]: Changed cfg.dataset -> cfg.run.dataset
+    #
+    # [OLD CODE]:
+    # print(f"Loaded {len(dataset)} examples from {cfg.dataset.name}")
+    #
+    # [NEW CODE]:
     # Load dataset
     dataset = load_dataset(cfg, mode=mode)
-    print(f"Loaded {len(dataset)} examples from {cfg.dataset.name}")
+    print(f"Loaded {len(dataset)} examples from {cfg.run.dataset.name}")
     
     # Run inference
     results = run_inference(cfg, dataset, mode=mode)
