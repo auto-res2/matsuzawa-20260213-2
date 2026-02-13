@@ -24,6 +24,33 @@ def _convert_to_json_serializable(obj):
     Returns:
         JSON-serializable version of the object
     """
+    # [VALIDATOR FIX - Attempt 2]
+    # [PROBLEM]: Error 'to_dict' when fetching W&B runs
+    # [CAUSE]: hasattr(obj, 'to_dict') returns True but obj.to_dict is not callable (it's a data attribute),
+    #          causing a TypeError when trying to call obj.to_dict()
+    # [FIX]: Check if to_dict is callable before attempting to call it
+    #
+    # [OLD CODE]:
+    # if isinstance(obj, dict):
+    #     # Recursively convert all dict values
+    #     return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+    # elif isinstance(obj, (list, tuple)):
+    #     # Recursively convert all list/tuple elements
+    #     return [_convert_to_json_serializable(item) for item in obj]
+    # elif isinstance(obj, (int, float, str, bool, type(None))):
+    #     # Already JSON-serializable
+    #     return obj
+    # elif hasattr(obj, 'to_dict'):
+    #     # If object has to_dict method, use it
+    #     return _convert_to_json_serializable(obj.to_dict())
+    # elif hasattr(obj, '__dict__'):
+    #     # For objects with __dict__, convert to dict
+    #     return _convert_to_json_serializable(obj.__dict__)
+    # else:
+    #     # Fallback: convert to string
+    #     return str(obj)
+    #
+    # [NEW CODE]:
     if isinstance(obj, dict):
         # Recursively convert all dict values
         return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
@@ -33,8 +60,8 @@ def _convert_to_json_serializable(obj):
     elif isinstance(obj, (int, float, str, bool, type(None))):
         # Already JSON-serializable
         return obj
-    elif hasattr(obj, 'to_dict'):
-        # If object has to_dict method, use it
+    elif hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict', None)):
+        # If object has a callable to_dict method, use it
         return _convert_to_json_serializable(obj.to_dict())
     elif hasattr(obj, '__dict__'):
         # For objects with __dict__, convert to dict
