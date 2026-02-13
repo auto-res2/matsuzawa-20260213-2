@@ -24,11 +24,11 @@ def _convert_to_json_serializable(obj):
     Returns:
         JSON-serializable version of the object
     """
-    # [VALIDATOR FIX - Attempt 2]
+    # [VALIDATOR FIX - Attempt 3]
     # [PROBLEM]: Error 'to_dict' when fetching W&B runs
-    # [CAUSE]: hasattr(obj, 'to_dict') returns True but obj.to_dict is not callable (it's a data attribute),
-    #          causing a TypeError when trying to call obj.to_dict()
-    # [FIX]: Check if to_dict is callable before attempting to call it
+    # [CAUSE]: Some W&B objects raise AttributeError when accessing 'to_dict', even with getattr.
+    #          The error message is just the attribute name 'to_dict'.
+    # [FIX]: Use try-except to safely attempt to_dict conversion, avoiding hasattr which can trigger the error
     #
     # [OLD CODE]:
     # if isinstance(obj, dict):
@@ -40,8 +40,8 @@ def _convert_to_json_serializable(obj):
     # elif isinstance(obj, (int, float, str, bool, type(None))):
     #     # Already JSON-serializable
     #     return obj
-    # elif hasattr(obj, 'to_dict'):
-    #     # If object has to_dict method, use it
+    # elif hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict', None)):
+    #     # If object has a callable to_dict method, use it
     #     return _convert_to_json_serializable(obj.to_dict())
     # elif hasattr(obj, '__dict__'):
     #     # For objects with __dict__, convert to dict
@@ -60,13 +60,22 @@ def _convert_to_json_serializable(obj):
     elif isinstance(obj, (int, float, str, bool, type(None))):
         # Already JSON-serializable
         return obj
-    elif hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict', None)):
-        # If object has a callable to_dict method, use it
-        return _convert_to_json_serializable(obj.to_dict())
-    elif hasattr(obj, '__dict__'):
-        # For objects with __dict__, convert to dict
-        return _convert_to_json_serializable(obj.__dict__)
     else:
+        # Try to_dict first (safest with try-except to avoid AttributeError on access)
+        try:
+            to_dict_method = obj.to_dict
+            if callable(to_dict_method):
+                return _convert_to_json_serializable(to_dict_method())
+        except (AttributeError, TypeError):
+            pass
+        
+        # Try __dict__ next
+        try:
+            if hasattr(obj, '__dict__'):
+                return _convert_to_json_serializable(obj.__dict__)
+        except (AttributeError, TypeError):
+            pass
+        
         # Fallback: convert to string
         return str(obj)
 
