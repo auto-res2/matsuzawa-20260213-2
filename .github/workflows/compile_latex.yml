@@ -1,4 +1,4 @@
-﻿name: "Compile LaTeX"
+name: "Compile LaTeX"
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
         description: 'Desired output PDF filename without extension (e.g., generated_paper)'
         required: true
         default: 'generated_paper'
-      github_actions_agent:                                                                                                              
+      github_actions_agent:
         description: 'AI agent tool to use (claude_code or open_code)'  
         required: true
         type: choice
@@ -63,24 +63,31 @@ jobs:
 
         pdflatex -interaction=nonstopmode main.tex
         pdflatex -interaction=nonstopmode main.tex
-      PROMPT: |
-        You are a fully autonomous AI assistant specializing in LaTeX document correction.
-        Your task is to ensure the LaTeX paper is free of chktex warnings and compiles successfully into a PDF. You will achieve this by executing, analyzing, fixing, and re-validating the document.
-        You have been granted full tool access.
+    PROMPT: |
+      You are a fully autonomous AI assistant specializing in LaTeX document correction.
+      Your task is to ensure the LaTeX paper is free of chktex warnings and compiles successfully into a PDF. You will achieve this by
+      executing, analyzing, fixing, and re-validating the document.
+      You have been granted full tool access.
 
-        Guiding Principles:
-        - Scope: Do not perform any Git operations like commit or push. Your sole responsibility is to make the LaTeX document compilable.
-        - Method: When fixing errors, you MUST only modify existing files. Do not create new files.
-        - Minimal Edits: You MUST limit your changes to the absolute minimum required to fix LaTeX syntax, chktex warnings, or compilation errors.
-        - Autonomy: Execute all steps autonomously without asking for permission.
+      Guiding Principles:
+      - Scope: Do not perform any Git operations like commit or push. Your sole responsibility is to make the LaTeX document compilable.
+      - Method: When fixing errors, you MUST only modify existing files. Do not create new files.
+      - Minimal Edits: You MUST limit your changes to the absolute minimum required to fix LaTeX syntax, chktex warnings, or compilation errors.
+      - Autonomy: Execute all steps autonomously without asking for permission.
 
-        Procedure:
-        1.  Change Directory: First, change your working directory to `$LATEX_DIR`. All subsequent commands MUST be run from this directory.
-        2.  Run ChkTeX: Execute the command `bash -c "$CHKTEX_COMMAND"`.
-        3.  Analyze & Fix ChkTeX: If the command fails, you MUST analyze the chktex warnings from the output, fix the `main.tex` file, and repeat step 2 until it passes.
-        4.  Run LaTeX Compile: Once chktex passes, execute `bash -c "$COMPILE_COMMAND"`.
-        5.  Analyze & Fix Compilation: If compilation fails, you MUST analyze the LaTeX errors (e.g., undefined control sequences, missing files, bad boxes), fix the `.tex` files, and repeat step 4 until it succeeds.
-        6.  Completion: Once both phases are complete, the task is finished.
+      Procedure:
+      1.  Change Directory: First, change your working directory to `${{ env.LATEX_DIR }}`. All subsequent commands MUST be run from this directory.
+      2.  Run ChkTeX: Execute the following command:
+          ```bash
+          ${{ env.CHKTEX_COMMAND }}
+          ```
+      3.  Analyze & Fix ChkTeX: If the command fails, you MUST analyze the chktex warnings from the output, fix the `main.tex` file, and repeat step 2 until it passes.
+      4.  Run LaTeX Compile: Once chktex passes, execute the following command:
+          ```bash
+          ${{ env.COMPILE_COMMAND }}
+          ```
+      5.  Analyze & Fix Compilation: If compilation fails, you MUST analyze the LaTeX errors (e.g., undefined control sequences, missing files, bad boxes), fix the `.tex` files, and repeat step 4 until it succeeds.
+      6.  Completion: Once both phases are complete, the task is finished.
 
     steps:
       - name: Checkout repository
