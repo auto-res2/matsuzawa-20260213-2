@@ -112,6 +112,7 @@ jobs:
           docker run --rm $GPU_FLAGS \
             -v "$(pwd)/$RESULTS_DIR:/workspace/$RESULTS_DIR" \
             -e WANDB_API_KEY \
+            -e RESULTS_DIR="$RESULTS_DIR" \  
             airas-experiment:latest \
             bash -c '
               set -e
@@ -141,16 +142,6 @@ jobs:
               run_ids='${{ github.event.inputs.run_ids }}'
             echo "=== [VISUALIZATION] PASSED at $(date -u) ==="
           ) > >(tee -a "$RESULTS_DIR/stdout.txt") 2> >(tee -a "$RESULTS_DIR/stderr.txt" >&2)
-
-      - name: Debug - Check results directory
-        run: |
-          echo "=== Checking RESULTS_DIR ==="
-          echo "RESULTS_DIR: $RESULTS_DIR"
-          echo "Full path: $(pwd)/$RESULTS_DIR"
-          ls -laR "$RESULTS_DIR" || echo "Directory not found or empty"
-          echo ""
-          echo "=== Running find command ==="
-          find "$RESULTS_DIR" -type f \( -name "*.pdf" -o -name "*.png" \) -ls || echo "No PDF/PNG files found"
 
       - name: Check visualization results
         id: check-result
