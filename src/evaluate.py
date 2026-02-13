@@ -254,17 +254,46 @@ def create_comparison_figures(runs_data: List[Dict], output_dir: Path):
 
 def main():
     """Main evaluation script."""
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: evaluate.py called with Hydra-style args (key=value) but uses argparse (--key value)
+    # [CAUSE]: Workflow passes results_dir=".research/results" run_ids='[...]' without -- flags
+    # [FIX]: Parse both argparse-style and Hydra-style arguments
+    #
+    # [OLD CODE]:
+    # parser = argparse.ArgumentParser(description='Evaluate experiment runs from WandB')
+    # parser.add_argument('--results_dir', type=str, required=True, help='Results directory')
+    # parser.add_argument('--run_ids', type=str, required=True, help='JSON string list of run IDs')
+    # parser.add_argument('--wandb_entity', type=str, default=None, help='WandB entity (or use WANDB_ENTITY env)')
+    # parser.add_argument('--wandb_project', type=str, default=None, help='WandB project (or use WANDB_PROJECT env)')
+    # args = parser.parse_args()
+    #
+    # [NEW CODE]:
+    import sys
+    
+    # Check if arguments are in Hydra format (key=value)
+    hydra_args = {}
+    regular_args = []
+    for arg in sys.argv[1:]:
+        if '=' in arg and not arg.startswith('--'):
+            # Hydra-style: key=value
+            key, value = arg.split('=', 1)
+            hydra_args[key] = value
+        else:
+            regular_args.append(arg)
+    
+    # If we have Hydra-style args, convert them to argparse format
+    if hydra_args:
+        sys.argv = [sys.argv[0]]
+        for key, value in hydra_args.items():
+            sys.argv.extend([f'--{key}', value])
+    
     parser = argparse.ArgumentParser(description='Evaluate experiment runs from WandB')
     parser.add_argument('--results_dir', type=str, required=True, help='Results directory')
-    parser.add_argument('--run_ids', type=str, required=True, help='JSON string list of run IDs')
+    parser.add_argument('--run_ids', type=str, required=False, default=None, help='JSON string list of run IDs (or auto-discover)')
     parser.add_argument('--wandb_entity', type=str, default=None, help='WandB entity (or use WANDB_ENTITY env)')
     parser.add_argument('--wandb_project', type=str, default=None, help='WandB project (or use WANDB_PROJECT env)')
     
     args = parser.parse_args()
-    
-    # Parse run_ids
-    run_ids = json.loads(args.run_ids)
-    print(f"Evaluating {len(run_ids)} runs: {run_ids}")
     
     # Get WandB config
     entity = args.wandb_entity or os.getenv('WANDB_ENTITY')
@@ -274,6 +303,34 @@ def main():
         raise ValueError("WandB entity and project must be specified via arguments or environment variables")
     
     print(f"WandB: {entity}/{project}")
+    
+    # Parse run_ids or auto-discover
+    if args.run_ids:
+        run_ids = json.loads(args.run_ids)
+        print(f"Evaluating {len(run_ids)} runs: {run_ids}")
+    else:
+        # Auto-discover runs from WandB project
+        print("No run_ids provided, auto-discovering from WandB project...")
+        api = wandb.Api()
+        runs = api.runs(f"{entity}/{project}")
+        # Filter to finished runs from main experiments (not sanity checks)
+        run_ids = []
+        for run in runs:
+            # Skip sanity check runs
+            if 'sanity' in run.name.lower() or run.config.get('mode') == 'sanity_check':
+                continue
+            # Only include runs with completed state
+            if run.state == 'finished':
+                run_ids.append(run.id)
+        
+        print(f"Auto-discovered {len(run_ids)} runs: {run_ids}")
+        
+        if not run_ids:
+            print("WARNING: No finished runs found in WandB project. Nothing to visualize.")
+            print("Creating empty results directory.")
+            results_dir = Path(args.results_dir)
+            results_dir.mkdir(parents=True, exist_ok=True)
+            return
     
     # Create results directory
     results_dir = Path(args.results_dir)
