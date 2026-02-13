@@ -14,6 +14,36 @@ matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
 
 
+def _convert_to_json_serializable(obj):
+    """
+    Recursively convert WandB objects to JSON-serializable types.
+    
+    Args:
+        obj: Any object from WandB (e.g., SummarySubDict, config dict, etc.)
+    
+    Returns:
+        JSON-serializable version of the object
+    """
+    if isinstance(obj, dict):
+        # Recursively convert all dict values
+        return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        # Recursively convert all list/tuple elements
+        return [_convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, (int, float, str, bool, type(None))):
+        # Already JSON-serializable
+        return obj
+    elif hasattr(obj, 'to_dict'):
+        # If object has to_dict method, use it
+        return _convert_to_json_serializable(obj.to_dict())
+    elif hasattr(obj, '__dict__'):
+        # For objects with __dict__, convert to dict
+        return _convert_to_json_serializable(obj.__dict__)
+    else:
+        # Fallback: convert to string
+        return str(obj)
+
+
 def fetch_wandb_run(entity: str, project: str, run_id: str) -> Dict[str, Any]:
     """
     Fetch run data from WandB API.
@@ -21,18 +51,49 @@ def fetch_wandb_run(entity: str, project: str, run_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing config, summary, and history
     """
+    # [VALIDATOR FIX - Attempt 1]
+    # [PROBLEM]: TypeError: Object of type SummarySubDict is not JSON serializable
+    # [CAUSE]: run.summary contains nested SummarySubDict objects from W&B that don't convert properly with dict()
+    # [FIX]: Recursively convert all W&B objects to JSON-serializable types using helper function
+    #
+    # [OLD CODE]:
+    # api = wandb.Api()
+    # run = api.run(f"{entity}/{project}/{run_id}")
+    # 
+    # # Get run data
+    # config = dict(run.config)
+    # summary = dict(run.summary)
+    # 
+    # # Get history (may be empty for single-step runs)
+    # history = []
+    # try:
+    #     for row in run.history():
+    #         history.append(dict(row))
+    # except Exception as e:
+    #     print(f"Warning: Could not fetch history for {run_id}: {e}")
+    # 
+    # return {
+    #     'config': config,
+    #     'summary': summary,
+    #     'history': history,
+    #     'run_id': run_id,
+    #     'name': run.name,
+    #     'url': run.url
+    # }
+    #
+    # [NEW CODE]:
     api = wandb.Api()
     run = api.run(f"{entity}/{project}/{run_id}")
     
-    # Get run data
-    config = dict(run.config)
-    summary = dict(run.summary)
+    # Get run data with proper conversion to JSON-serializable types
+    config = _convert_to_json_serializable(dict(run.config))
+    summary = _convert_to_json_serializable(dict(run.summary))
     
     # Get history (may be empty for single-step runs)
     history = []
     try:
         for row in run.history():
-            history.append(dict(row))
+            history.append(_convert_to_json_serializable(dict(row)))
     except Exception as e:
         print(f"Warning: Could not fetch history for {run_id}: {e}")
     
