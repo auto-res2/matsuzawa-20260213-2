@@ -655,5 +655,126 @@
     "experimental_code": "import re\nfrom collections import defaultdict\nimport math\nimport torch\nfrom datasets import load_dataset\nfrom transformers import AutoTokenizer, AutoModelForCausalLM\n\nMODEL = \"Qwen/Qwen2.5-1.5B-Instruct\"\nK = 10\nMAX_NEW_TOKENS = 256\nTEMPERATURE = 0.7\nTOP_P = 0.95\n\n# calibration\nN_CAL = 60\nN_EVAL_TOTAL = 300\nN_BINS = 10\nLAPLACE = 2.0  # smoothing strength\n\nSYSTEM = \"You are a careful mathematician. Solve the problem.\" \nPROMPT_TMPL = (\n\"{system}\\n\\n\"\n\"Problem: {q}\\n\\n\"\n\"Think step by step. Then do a quick self-check, and report:\\n\"\n\"Final answer: <answer>\\n\"\n\"Self-check: <one short check>\\n\"\n\"Updated confidence: <number between 0 and 1>\\n\"\n)\n\nans_re = re.compile(r\"Final answer:\\s*(.*)\")\nconf_re = re.compile(r\"Updated confidence:\\s*([0-1](?:\\.\\d+)?)\")\n\n\ndef extract(text: str):\n    ans_m = ans_re.search(text)\n    conf_m = conf_re.search(text)\n    ans = ans_m.group(1).strip() if ans_m else \"\"\n    c = float(conf_m.group(1)) if conf_m else 0.0\n    c = max(0.0, min(1.0, c))\n    return ans, c\n\n\ndef normalize_num(ans: str):\n    nums = re.findall(r\"-?\\d+\\.?\\d*\", ans.replace(\",\", \"\"))\n    return nums[-1] if nums else ans.strip()\n\n\n@torch.inference_mode()\ndef sample_solutions(model, tok, q, k=K):\n    prompt = PROMPT_TMPL.format(system=SYSTEM, q=q)\n    inp = tok(prompt, return_tensors=\"pt\").to(model.device)\n    outs = model.generate(\n        **inp,\n        do_sample=True,\n        temperature=TEMPERATURE,\n        top_p=TOP_P,\n        num_return_sequences=k,\n        max_new_tokens=MAX_NEW_TOKENS,\n    )\n    texts = tok.batch_decode(outs, skip_special_tokens=True)\n    return [extract(t) for t in texts]\n\n\ndef majority_vote(pairs):\n    counts = defaultdict(int)\n    for a, _ in pairs:\n        counts[a] += 1\n    return max(counts.items(), key=lambda x: x[1])[0]\n\n\ndef raw_conf_weighted_vote(pairs):\n    scores = defaultdict(float)\n    for a, c in pairs:\n        scores[a] += c\n    return max(scores.items(), key=lambda x: x[1])[0]\n\n\ndef fit_binned_calibrator(conf_list, y_list, n_bins=N_BINS, laplace=LAPLACE):\n    # equal-width bins on [0,1]\n    bin_pos = [0.0] * n_bins\n    bin_tot = [0.0] * n_bins\n    for c, y in zip(conf_list, y_list):\n        b = min(n_bins - 1, int(c * n_bins))  # c=1.0 goes to last bin\n        bin_pos[b] += float(y)\n        bin_tot[b] += 1.0\n\n    # Laplace-smoothed accuracy per bin\n    bin_p = []\n    for pos, tot in zip(bin_pos, bin_tot):\n        p = (pos + laplace * 0.5) / (tot + laplace)\n        bin_p.append(min(1 - 1e-4, max(1e-4, p)))\n\n    def f(c):\n        b = min(n_bins - 1, int(max(0.0, min(1.0, c)) * n_bins))\n        return bin_p[b]\n\n    return f, bin_p, bin_tot\n\n\ndef calibrated_logodds_vote(pairs, calibrator):\n    scores = defaultdict(float)\n    for a, c in pairs:\n        p = calibrator(c)\n        scores[a] += math.log(p) - math.log(1.0 - p)\n    return max(scores.items(), key=lambda x: x[1])[0]\n\n\nif __name__ == \"__main__\":\n    ds = load_dataset(\"gsm8k\", \"main\", split=f\"test[:{N_EVAL_TOTAL}]\")\n    cal_ds = ds.select(range(N_CAL))\n    eval_ds = ds.select(range(N_CAL, N_EVAL_TOTAL))\n\n    tok = AutoTokenizer.from_pretrained(MODEL, use_fast=True)\n    model = AutoModelForCausalLM.from_pretrained(\n        MODEL,\n        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,\n        device_map=\"auto\",\n    )\n\n    # --- calibration phase ---\n    confs, ys = [], []\n    for ex in cal_ds:\n        q = ex[\"question\"]\n        gold = ex[\"answer\"].split(\"####\")[-1].strip()\n        pairs = sample_solutions(model, tok, q, k=K)\n        for a, c in pairs:\n            pred = normalize_num(a)\n            confs.append(c)\n            ys.append(1 if pred == gold else 0)\n\n    calibrator, bin_p, bin_tot = fit_binned_calibrator(confs, ys)\n    print({\"calibration_bin_p\": bin_p, \"calibration_bin_counts\": bin_tot})\n\n    # --- evaluation phase ---\n    mv_ok = raw_ok = cal_ok = 0\n    for ex in eval_ds:\n        q = ex[\"question\"]\n        gold = ex[\"answer\"].split(\"####\")[-1].strip()\n\n        pairs = sample_solutions(model, tok, q, k=K)\n        pred_mv = normalize_num(majority_vote(pairs))\n        pred_raw = normalize_num(raw_conf_weighted_vote(pairs))\n        pred_cal = normalize_num(calibrated_logodds_vote(pairs, calibrator))\n\n        mv_ok += int(pred_mv == gold)\n        raw_ok += int(pred_raw == gold)\n        cal_ok += int(pred_cal == gold)\n\n    n = len(eval_ds)\n    print({\n        \"majority_vote_accuracy\": mv_ok / n,\n        \"raw_conf_weighted_accuracy\": raw_ok / n,\n        \"calibrated_metacognitive_sc_accuracy\": cal_ok / n,\n        \"N_cal\": N_CAL,\n        \"K\": K,\n    })\n",
     "expected_result": "Across GSM8K test[60:300] with K=10:\n- Majority vote: ~0.40–0.55 (model-dependent)\n- Raw confidence-weighting: inconsistent, often within ±0.00–0.03 of MV (can be worse when confidence is miscalibrated)\n- **Cal-MSC (proposed):** +0.03 to +0.07 absolute over MV on average (e.g., 0.48→0.53/0.55), with markedly fewer “confidence hurts” cases.\n\nCompute-efficiency prediction: Cal-MSC@K=5 should approach or slightly exceed MV@K=10 (≈ parity or +0.01–0.03), indicating fewer samples needed for similar accuracy.\n\nDiagnostics:\n- Updated confidence should show lower ECE after calibration (e.g., ECE drops from ~0.15–0.25 raw to ~0.05–0.12 calibrated on the eval slice).\n- Log-odds pooling should outperform linear weighting, especially when confidence values concentrate near 0.8–1.0 (common in instruction-tuned LMs).",
     "expected_conclusion": "Prompt-only CoT aggregation can be made meaningfully more reliable by adding a human-like metacognitive loop—*self-check then updated confidence*—and, crucially, by **learning how trustworthy that confidence is** from a tiny calibration slice, without any model fine-tuning or separate verifier. Academically, this reframes “confidence-weighted self-consistency” from a heuristic into a lightweight probabilistic decision rule with explicit miscalibration correction, clarifying when and why confidence helps. Practically, it improves accuracy–compute trade-offs (higher accuracy at fixed K or similar accuracy with smaller K), reducing latency/cost for deployed reasoning assistants while requiring only a minor prompt change and a short, scriptable calibration step."
+  },
+  "experimental_design": {
+    "experiment_summary": "Goal: evaluate whether **Calibrated Metacognitive Self-Consistency (Cal‑MSC)** improves *final-answer correctness* for multi-step reasoning problems by (i) sampling K diverse Chain-of-Thought (CoT) solutions, (ii) forcing each sample to do a brief self-check and output an updated confidence c∈[0,1], (iii) learning an on-the-fly calibration map f(c)≈P(correct|c) from a tiny calibration slice of the same task distribution, then (iv) aggregating candidate answers using calibrated log-odds pooling.\n\nTask nature (what the model must DO): given a natural-language math word problem, the model must produce a single numeric final answer (e.g., an integer). We evaluate correctness against dataset gold answers.\n\nWorkflow (per dataset):\n1) **Data slicing for lightweight, reproducible runs** (fits Runner): take only 300 problems from the evaluation split. Use the first N_cal for calibration and the remainder for evaluation.\n   - GSM8K: test[:300] → cal[:60], eval[60:300] (240 questions).\n   - SVAMP: test[:300] → cal[:60], eval[60:300] (240 questions).\n2) **Sampling**: for each question, sample K completions at temperature>0 (K∈{5,10}) with the same base prompt across methods.\n3) **Parsing**: extract (answer, confidence) from each completion; normalize numeric answers (strip commas, take last numeric token, float conversion).\n4) **Calibration (Cal‑MSC only)**: collect all (c,y) pairs from calibration questions across the K samples, where y=1 if the sample’s extracted answer matches gold. Fit f(c) using (a) equal-width binning with Laplace smoothing (default) or (b) isotonic regression if enabled.\n5) **Aggregation on eval questions**:\n   - Baseline SC‑MV: majority vote over normalized answers.\n   - Proposed Cal‑MSC: for each sample i, compute p_i=f(c_i). For each unique answer a, compute score(a)=∑_{i:ans_i=a} log(p_i/(1−p_i)). Predict argmax_a score(a).\n6) **Reporting**: compute accuracy (primary) and calibration diagnostics (ECE/AUROC/Brier) on the evaluation slice; run ablations over (K, N_cal, with/without self-check clause) while keeping total questions fixed.\n\nRunner-fit scaling notes (NVIDIA H200 140GB VRAM, 240GB RAM):\n- Inference-only; no fine-tuning.\n- Subsample to 300 questions per dataset; K≤10; max_new_tokens≤256.\n- Use bfloat16/float16 + device_map=\"auto\"; batch generation where possible.\n- Cache all sampled generations to disk (JSONL) keyed by (dataset, split, idx, seed, K, temperature) so that calibration/aggregation variants reuse the same samples without extra GPU time.\n- Expected total generations per dataset: 300×K (e.g., 3,000 at K=10), comfortably feasible on a single H200 within a few hours depending on model speed and batching.\n",
+    "runner_config": {
+      "runner_label": [
+        "self-hosted",
+        "gpu-runner"
+      ],
+      "description": "NVIDIA H200, VRAM: 140 GB, RAM: 240 GB"
+    },
+    "evaluation_metrics": [
+      {
+        "name": "accuracy",
+        "description": "**What counts as correct:** A prediction is correct if the extracted *numeric* final answer matches the gold answer after normalization. Normalization procedure: (1) remove commas, (2) extract the last number-like token via regex `-?\\d+(?:\\.\\d+)?`, (3) convert to float if possible, else fall back to stripped text, (4) compare numeric answers with tolerance `abs(pred-gold) <= 1e-3` (covers occasional decimal formatting). For GSM8K gold is the number after `####` in the provided answer string; for SVAMP gold is the `answer` field.\n\n**How to compute:** `accuracy = (1/|D_eval|) * sum_{q in D_eval} 1[pred(q) == gold(q)]`.\n\n**Why appropriate:** Both GSM8K and SVAMP are single-answer math word problems; accuracy directly measures end-task utility of the aggregation rule.\n\n**Visualizations:** (i) bar chart of accuracy by method (SC‑MV vs Cal‑MSC) per dataset; (ii) accuracy vs K curve (K=1,5,10 by truncating the same sampled list); (iii) paired per-question win/loss scatter: indicator whether Cal‑MSC fixes SC‑MV errors."
+      },
+      {
+        "name": "Expected Calibration Error (ECE)",
+        "description": "**What it measures:** Miscalibration of the model’s *metacognitive probability* for correctness. We compute ECE for (a) raw updated confidence c and (b) calibrated probability p=f(c). This is diagnostic: Cal‑MSC should reduce miscalibration.\n\n**Correctness criterion:** Each sampled completion is labeled y∈{0,1} based on whether its extracted final answer matches gold (same normalization as accuracy).\n\n**How to compute (binning):** Partition predictions into B equal-width bins over [0,1] (B=10). For bin b, let `conf(b)=mean(p_i)` and `acc(b)=mean(y_i)` over samples in the bin. Then\n`ECE = sum_{b=1..B} (n_b / n) * |acc(b) - conf(b)|`.\nUse the *evaluation split’s sampled completions* (all K samples per question) so the estimate is stable.\n\n**Why appropriate:** The hypothesis claims raw confidence is brittle/miscalibrated and that a tiny calibration slice can correct it. ECE directly tests that claim.\n\n**Visualizations:** (i) reliability diagram (acc(b) vs conf(b)) with bin counts; (ii) histogram of confidences pre/post calibration; (iii) ECE bar chart across ablations (N_cal, K)."
+      },
+      {
+        "name": "Confidence–Correctness AUROC",
+        "description": "**What it measures:** How well confidence ranks correct vs incorrect sampled solutions (discrimination), independent of threshold.\n\n**Correctness criterion:** Same y∈{0,1} label as above for each sampled completion.\n\n**How to compute:** Treat confidence score s as either raw c or calibrated p=f(c). Compute AUROC over all sampled completions in the eval split:\n`AUROC = P(s_pos > s_neg) + 0.5*P(s_pos = s_neg)` where pos/neg are randomly drawn correct/incorrect samples.\n\n**Why appropriate:** Cal‑MSC relies on confidence being informative *after* calibration. AUROC checks whether the prompt format (self-check + updated confidence) yields a usable ordering signal.\n\n**Visualizations:** ROC curve; AUROC table for raw vs calibrated; optionally AUROC vs K (more samples provide a richer confidence distribution)."
+      },
+      {
+        "name": "Brier Score (calibrated probability)",
+        "description": "**What it measures:** Proper scoring rule for probabilistic correctness estimates; lower is better. Computed for p=f(c) on the evaluation split’s sampled completions.\n\n**Correctness criterion:** Each completion has label y∈{0,1} from normalized answer match.\n\n**How to compute:** `Brier = (1/n) * sum_i (p_i - y_i)^2`.\n\n**Why appropriate:** Unlike ECE (which depends on binning), the Brier score is smooth and directly rewards both good calibration and good discrimination; it complements AUROC/ECE.\n\n**Visualizations:** distribution (violin/box) of per-bin squared error; Brier score bars across calibration sizes N_cal."
+      }
+    ],
+    "models_to_use": [
+      "Qwen3-8B (8B parameters)"
+    ],
+    "datasets_to_use": [
+      "openai/gsm8k (main)",
+      "MU-NLPC/Calc-svamp (SVAMP)"
+    ],
+    "proposed_method": {
+      "method_name": "Calibrated Metacognitive Self-Consistency (Cal-MSC)",
+      "description": "Inference-time ensemble method for reasoning: sample K CoT solutions where each sample performs a brief self-check and outputs an updated confidence c∈[0,1]. Learn an on-the-fly calibration map f(c)≈P(correct|c) from a tiny in-distribution calibration slice (dozens of questions) using nonparametric binning (Laplace-smoothed) or isotonic regression. Aggregate answers via log-odds pooling using calibrated probabilities, yielding a statistically more efficient and more robust alternative to majority vote and raw confidence weighting without any fine-tuning or external verifier.",
+      "optuna_config": {
+        "enabled": false,
+        "n_trials": 20,
+        "search_spaces": [
+          {
+            "param_name": "temperature",
+            "distribution_type": "uniform",
+            "low": 0.3,
+            "high": 1.0
+          },
+          {
+            "param_name": "top_p",
+            "distribution_type": "uniform",
+            "low": 0.8,
+            "high": 1.0
+          },
+          {
+            "param_name": "K",
+            "distribution_type": "categorical",
+            "choices": [
+              5,
+              10
+            ]
+          },
+          {
+            "param_name": "N_cal",
+            "distribution_type": "categorical",
+            "choices": [
+              20,
+              40,
+              60
+            ]
+          },
+          {
+            "param_name": "n_bins",
+            "distribution_type": "categorical",
+            "choices": [
+              5,
+              10,
+              20
+            ]
+          },
+          {
+            "param_name": "laplace",
+            "distribution_type": "uniform",
+            "low": 0.5,
+            "high": 5.0
+          }
+        ]
+      }
+    },
+    "comparative_methods": [
+      {
+        "method_name": "Self-Consistency Majority Vote (SC-MV)",
+        "description": "Standard self-consistency baseline: sample K independent CoT completions with temperature>0 and select the final answer by unweighted majority vote over normalized extracted answers. Uses the same sampling budget and base prompt (without requiring confidence calibration).",
+        "optuna_config": {
+          "enabled": false,
+          "n_trials": 20,
+          "search_spaces": [
+            {
+              "param_name": "temperature",
+              "distribution_type": "uniform",
+              "low": 0.3,
+              "high": 1.0
+            },
+            {
+              "param_name": "top_p",
+              "distribution_type": "uniform",
+              "low": 0.8,
+              "high": 1.0
+            },
+            {
+              "param_name": "K",
+              "distribution_type": "categorical",
+              "choices": [
+                5,
+                10
+              ]
+            }
+          ]
+        }
+      }
+    ]
   }
 }
