@@ -110,16 +110,14 @@ jobs:
           fi
 
           docker run --rm $GPU_FLAGS \
-            -v "$(pwd):/workspace" \
-            -w /workspace \
+            -v "$(pwd)/$RESULTS_DIR:/workspace/$RESULTS_DIR" \
             -e WANDB_API_KEY \
-            -e RESULTS_DIR \
             airas-experiment:latest \
             bash -c '
               set -e
               set -o pipefail
               echo "=== [VISUALIZATION] Start at $(date -u) ==="
-              uv run python -u -m src.evaluate results_dir="'"$RESULTS_DIR"'" run_ids='"'"'${{ github.event.inputs.run_ids }}'"'"'
+              uv run python -u -m src.evaluate results_dir="$RESULTS_DIR" run_ids='"'"'${{ github.event.inputs.run_ids }}'"'"'
               echo "=== [VISUALIZATION] PASSED at $(date -u) ==="
             ' > >(tee -a "$RESULTS_DIR/stdout.txt") 2> >(tee -a "$RESULTS_DIR/stderr.txt" >&2)
 
