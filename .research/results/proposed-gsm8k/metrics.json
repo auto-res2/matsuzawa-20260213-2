@@ -1,0 +1,60 @@
+{
+  "run_id": "proposed-gsm8k",
+  "name": "proposed-gsm8k",
+  "url": "https://wandb.ai/airas/2026-02-13-2/runs/proposed-gsm8k",
+  "config": {
+    "run": {
+      "model": {
+        "name": "gpt-3.5-turbo",
+        "provider": "openai",
+        "max_tokens": 512
+      },
+      "method": {
+        "name": "cal-msc",
+        "type": "proposed",
+        "n_bins": 10,
+        "k_samples": 10,
+        "description": "Calibrated Metacognitive Self-Consistency",
+        "temperature": 0.8,
+        "laplace_smoothing": 1,
+        "calibration_method": "binning"
+      },
+      "prompt": {
+        "system_message": "You are a helpful assistant that solves math word problems step by step.",
+        "cot_instruction": "Solve this math problem step by step. Show your reasoning clearly.\n\nAfter solving, provide:\n1. Final answer: [your numeric answer]\n2. Self-check: [briefly verify your key arithmetic and reasoning]\n3. Updated confidence: [a number between 0.0 and 1.0 indicating how confident you are]\n\nFormat your response as:\nFinal answer: <number>\nSelf-check: <brief verification>\nUpdated confidence: <0.0 to 1.0>\n"
+      },
+      "run_id": "proposed-gsm8k",
+      "dataset": {
+        "name": "gsm8k",
+        "split": "test",
+        "n_total": 300,
+        "n_evaluation": 240,
+        "n_calibration": 60
+      },
+      "inference": {
+        "cache_dir": ".cache",
+        "use_cache": true,
+        "batch_size": 1,
+        "num_workers": 1
+      }
+    },
+    "mode": "main",
+    "wandb": {
+      "mode": "online",
+      "entity": "airas",
+      "project": "2026-02-13-2"
+    },
+    "results_dir": ".research/results"
+  },
+  "summary": {
+    "_runtime": 7220,
+    "_step": 0,
+    "_timestamp": 1771001493.4748237,
+    "_wandb": {
+      "runtime": 7220
+    },
+    "accuracy": 0.6833333333333333,
+    "num_correct": 164,
+    "num_total": 240
+  }
+}

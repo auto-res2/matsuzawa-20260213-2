@@ -1,0 +1,66 @@
+{
+  "primary_metric": "accuracy",
+  "metrics_by_run": {
+    "comparative-1-gsm8k": {
+      "accuracy": 0.8916666666666667,
+      "all_metrics": {
+        "_runtime": 5431,
+        "_step": 0,
+        "_timestamp": 1770999705.3835506,
+        "_wandb": {
+          "runtime": 5431
+        },
+        "accuracy": 0.8916666666666667,
+        "num_correct": 214,
+        "num_total": 240
+      }
+    },
+    "comparative-1-svamp": {
+      "accuracy": 0.875,
+      "all_metrics": {
+        "_runtime": 4111,
+        "_step": 0,
+        "_timestamp": 1770998383.8279486,
+        "_wandb": {
+          "runtime": 4111
+        },
+        "accuracy": 0.875,
+        "num_correct": 210,
+        "num_total": 240
+      }
+    },
+    "proposed-gsm8k": {
+      "accuracy": 0.6833333333333333,
+      "all_metrics": {
+        "_runtime": 7220,
+        "_step": 0,
+        "_timestamp": 1771001493.4748237,
+        "_wandb": {
+          "runtime": 7220
+        },
+        "accuracy": 0.6833333333333333,
+        "num_correct": 164,
+        "num_total": 240
+      }
+    },
+    "proposed-svamp": {
+      "accuracy": 0.8375,
+      "all_metrics": {
+        "_runtime": 5779,
+        "_step": 0,
+        "_timestamp": 1771000051.9951582,
+        "_wandb": {
+          "runtime": 5779
+        },
+        "accuracy": 0.8375,
+        "num_correct": 201,
+        "num_total": 240
+      }
+    }
+  },
+  "best_proposed": "proposed-svamp",
+  "best_proposed_accuracy": 0.8375,
+  "best_baseline": "comparative-1-gsm8k",
+  "best_baseline_accuracy": 0.8916666666666667,
+  "gap": -0.054166666666666696
+}

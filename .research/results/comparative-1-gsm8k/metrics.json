@@ -1,0 +1,58 @@
+{
+  "run_id": "comparative-1-gsm8k",
+  "name": "comparative-1-gsm8k",
+  "url": "https://wandb.ai/airas/2026-02-13-2/runs/comparative-1-gsm8k",
+  "config": {
+    "run": {
+      "model": {
+        "name": "gpt-3.5-turbo",
+        "provider": "openai",
+        "max_tokens": 512
+      },
+      "method": {
+        "name": "sc-mv",
+        "type": "baseline",
+        "k_samples": 10,
+        "aggregation": "majority_vote",
+        "description": "Self-Consistency with Majority Vote",
+        "temperature": 0.8
+      },
+      "prompt": {
+        "system_message": "You are a helpful assistant that solves math word problems step by step.",
+        "cot_instruction": "Solve this math problem step by step. Show your reasoning clearly.\n\nProvide your final answer as:\nFinal answer: <number>\n"
+      },
+      "run_id": "comparative-1-gsm8k",
+      "dataset": {
+        "name": "gsm8k",
+        "split": "test",
+        "n_total": 300,
+        "n_evaluation": 240,
+        "n_calibration": 60
+      },
+      "inference": {
+        "cache_dir": ".cache",
+        "use_cache": true,
+        "batch_size": 1,
+        "num_workers": 1
+      }
+    },
+    "mode": "main",
+    "wandb": {
+      "mode": "online",
+      "entity": "airas",
+      "project": "2026-02-13-2"
+    },
+    "results_dir": ".research/results"
+  },
+  "summary": {
+    "_runtime": 5431,
+    "_step": 0,
+    "_timestamp": 1770999705.3835506,
+    "_wandb": {
+      "runtime": 5431
+    },
+    "accuracy": 0.8916666666666667,
+    "num_correct": 214,
+    "num_total": 240
+  }
+}

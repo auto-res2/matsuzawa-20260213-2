@@ -1,0 +1,41 @@
+=== [VISUALIZATION] Start at Fri Feb 13 19:31:17 UTC 2026 ===
+Using WandB entity from config.yaml: airas
+Using WandB project from config.yaml: 2026-02-13-2
+WandB: airas/2026-02-13-2
+Evaluating 4 runs: ['comparative-1-gsm8k', 'comparative-1-svamp', 'proposed-gsm8k', 'proposed-svamp']
+
+Fetching run: comparative-1-gsm8k
+Exported metrics to .research/results/comparative-1-gsm8k/metrics.json
+
+Fetching run: comparative-1-svamp
+Exported metrics to .research/results/comparative-1-svamp/metrics.json
+
+Fetching run: proposed-gsm8k
+Exported metrics to .research/results/proposed-gsm8k/metrics.json
+
+Fetching run: proposed-svamp
+Exported metrics to .research/results/proposed-svamp/metrics.json
+
+Aggregating metrics...
+Exported aggregated metrics to .research/results/comparison/aggregated_metrics.json
+
+Creating comparison figures...
+Created comparison figure: .research/results/comparison/comparison_accuracy.pdf
+
+============================================================
+EVALUATION SUMMARY
+============================================================
+Primary metric: accuracy
+Best proposed: proposed-svamp (0.8375)
+Best baseline: comparative-1-gsm8k (0.8917)
+Gap (proposed - baseline): -0.0542
+============================================================
+
+Generated files:
+  .research/results/comparative-1-gsm8k/metrics.json
+  .research/results/comparative-1-svamp/metrics.json
+  .research/results/proposed-gsm8k/metrics.json
+  .research/results/proposed-svamp/metrics.json
+  .research/results/comparison/aggregated_metrics.json
+  .research/results/comparison/comparison_accuracy.pdf
+=== [VISUALIZATION] PASSED at Fri Feb 13 19:31:26 UTC 2026 ===
