@@ -1,7 +1,6 @@
----
 name: "Compile LaTeX"
 
-'on':
+on:
   workflow_dispatch:
     inputs:
       branch_name:
@@ -103,7 +102,7 @@ jobs:
 
       - name: Save prompt to file
         run: |
-          PROMPT_FILE=".github/workflows/latex_prompt.txt"
+          PROMPT_FILE="/tmp/latex_prompt.txt"
           printf '%s\n' '${{ env.PROMPT }}' > "$PROMPT_FILE"
           echo "PROMPT_FILE=$PROMPT_FILE" >> "$GITHUB_ENV"
 
